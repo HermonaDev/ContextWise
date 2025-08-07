@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import { summarizeText } from '@/lib/huggingface';
 import { Note } from '@/types/note';
 
 export default function Dashboard() {
@@ -18,7 +19,6 @@ export default function Dashboard() {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (session) {
         setUserEmail(session.user.email || 'No email');
-        // Fetch user's notes
         const { data, error } = await supabase
           .from('notes')
           .select('*')
@@ -36,7 +36,7 @@ export default function Dashboard() {
     });
   }, [router]);
 
-  // Handle note creation
+  // Handle note creation with summary
   const handleCreateNote = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -47,14 +47,16 @@ export default function Dashboard() {
       return;
     }
 
+    // Generate summary
+    const summary = await summarizeText(content);
+
     const { error } = await supabase
       .from('notes')
-      .insert([{ user_id: session.user.id, title, content }]);
+      .insert([{ user_id: session.user.id, title, content, summary }]);
     if (error) {
       console.error('Error creating note:', error);
       setError(error.message);
     } else {
-      // Refresh notes
       const { data } = await supabase
         .from('notes')
         .select('*')
@@ -119,6 +121,11 @@ export default function Dashboard() {
               <li key={note.id} className="p-4 bg-gray-100 rounded-md">
                 <h3 className="text-lg font-semibold">{note.title}</h3>
                 <p className="text-gray-700">{note.content}</p>
+                {note.summary && (
+                  <p className="text-sm text-gray-600 mt-2">
+                    <strong>Summary:</strong> {note.summary}
+                  </p>
+                )}
                 <p className="text-sm text-gray-500">
                   Created: {new Date(note.created_at).toLocaleString()}
                 </p>
