@@ -1,14 +1,10 @@
-import { supabase } from '@/lib/supabase';
+import AuthForm from '@/components/AuthForm';
 
-export default async function Home() {
-  const { data, error } = await supabase.from('users').select('email').limit(1);
-
+export default function Home() {
   return (
     <main className="flex min-h-screen flex-col items-center justify-center p-4">
-      <h1 className="text-3xl font-bold">Welcome to ContextWise</h1>
-      <p className="mt-4 text-lg">
-        {error ? 'Supabase not connected' : 'Supabase connected successfully!'}
-      </p>
+      <h1 className="text-3xl font-bold mb-6">Welcome to ContextWise</h1>
+      <AuthForm />
     </main>
   );
 }
