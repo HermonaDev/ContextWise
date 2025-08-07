@@ -3,8 +3,8 @@ import axios from 'axios';
 const API_URL = 'https://api-inference.huggingface.co/models/facebook/bart-large-cnn';
 
 export async function summarizeText(text: string): Promise<string> {
-  console.log('HUGGINGFACE_API_KEY:', process.env.HUGGINGFACE_API_KEY); // Debug log
-  if (!process.env.HUGGINGFACE_API_KEY) {
+  console.log('HUGGINGFACE_API_KEY:', process.env.NEXT_PUBLIC_HUGGINGFACE_API_KEY);
+  if (!process.env.NEXT_PUBLIC_HUGGINGFACE_API_KEY) {
     return 'Hugging Face API key is missing';
   }
 
@@ -17,7 +17,7 @@ export async function summarizeText(text: string): Promise<string> {
       },
       {
         headers: {
-          Authorization: `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
+          Authorization: `Bearer ${process.env.NEXT_PUBLIC_HUGGINGFACE_API_KEY}`,
           'Content-Type': 'application/json',
         },
       }
