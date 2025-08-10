@@ -15,14 +15,13 @@ export default function Dashboard() {
   const [warning, setWarning] = useState<string | null>(null);
   const [searchTag, setSearchTag] = useState('');
   const [availableTags, setAvailableTags] = useState<string[]>([]);
+  const [editingNote, setEditingNote] = useState<Note | null>(null);
   const router = useRouter();
 
-  // Fetch notes and tags
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (session) {
         setUserEmail(session.user.email || 'No email');
-        // Fetch notes with tags
         const { data: notesData, error: notesError } = await supabase
           .from('notes')
           .select('*, tags(tag_name)')
@@ -34,7 +33,6 @@ export default function Dashboard() {
         } else {
           setNotes(notesData || []);
         }
-        // Fetch unique tags
         const { data: tagsData, error: tagsError } = await supabase
           .from('tags')
           .select('tag_name')
@@ -42,7 +40,7 @@ export default function Dashboard() {
         if (tagsError) {
           console.error('Error fetching tags:', tagsError);
         } else {
-          const uniqueTags = [...new Set(tagsData?.map((tag) => tag.tag_name))];
+          const uniqueTags = [...new Set(tagsData?.map((tag) => tag.tag_name))] || [];
           setAvailableTags(uniqueTags);
         }
       } else {
@@ -101,7 +99,6 @@ export default function Dashboard() {
       }
     }
 
-    // Refresh notes and tags
     const { data: refreshedNotes } = await supabase
       .from('notes')
       .select('*, tags(tag_name)')
@@ -113,14 +110,132 @@ export default function Dashboard() {
       .from('tags')
       .select('tag_name')
       .eq('user_id', session.user.id);
-    const uniqueTags = [...new Set((tagsData ?? []).map((tag) => tag.tag_name))];
+    const uniqueTags = [...new Set(tagsData?.map((tag) => tag.tag_name))] || [];
     setAvailableTags(uniqueTags);
 
     setTitle('');
     setContent('');
   };
 
-  // Filter notes by tag
+  const handleEditNote = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingNote) return;
+
+    setError(null);
+    setWarning(null);
+
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      setError('You must be logged in to edit a note');
+      return;
+    }
+
+    const summary = await summarizeText(content);
+    if (summary.startsWith('Failed') || summary.startsWith('Hugging Face')) {
+      setError(summary);
+      return;
+    }
+
+    const entities = await extractEntities(content);
+    if (entities.length === 0) {
+      setWarning('No entities found for tags. Try including names, organizations, or locations.');
+    }
+
+    const { error } = await supabase
+      .from('notes')
+      .update({ title, content, summary })
+      .eq('id', editingNote.id)
+      .eq('user_id', session.user.id);
+    if (error) {
+      console.error('Error updating note:', error);
+      setError(error.message);
+      return;
+    }
+
+    // Delete existing tags
+    await supabase
+      .from('tags')
+      .delete()
+      .eq('note_id', editingNote.id)
+      .eq('user_id', session.user.id);
+
+    // Insert new tags
+    if (entities.length > 0) {
+      const { error: tagError } = await supabase
+        .from('tags')
+        .insert(
+          entities.map((tag_name) => ({
+            note_id: editingNote.id,
+            user_id: session.user.id,
+            tag_name,
+          }))
+        );
+      if (tagError) {
+        console.error('Error creating tags:', tagError);
+        setError('Failed to save tags');
+        return;
+      }
+    }
+
+    const { data: refreshedNotes } = await supabase
+      .from('notes')
+      .select('*, tags(tag_name)')
+      .eq('user_id', session.user.id)
+      .order('created_at', { ascending: false });
+    setNotes(refreshedNotes || []);
+
+    const { data: tagsData } = await supabase
+      .from('tags')
+      .select('tag_name')
+      .eq('user_id', session.user.id);
+    const uniqueTags = [...new Set(tagsData?.map((tag) => tag.tag_name))] || [];
+    setAvailableTags(uniqueTags);
+
+    setEditingNote(null);
+    setTitle('');
+    setContent('');
+  };
+
+  const handleDeleteNote = async (noteId: string) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      setError('You must be logged in to delete a note');
+      return;
+    }
+
+    // Delete tags first (due to foreign key constraint)
+    await supabase
+      .from('tags')
+      .delete()
+      .eq('note_id', noteId)
+      .eq('user_id', session.user.id);
+
+    const { error } = await supabase
+      .from('notes')
+      .delete()
+      .eq('id', noteId)
+      .eq('user_id', session.user.id);
+    if (error) {
+      console.error('Error deleting note:', error);
+      setError(error.message);
+      return;
+    }
+
+    const { data: refreshedNotes } = await supabase
+      .from('notes')
+      .select('*, tags(tag_name)')
+      .eq('user_id', session.user.id)
+      .order('created_at', { ascending: false });
+    setNotes(refreshedNotes || []);
+
+    const { data: tagsData } = await supabase
+      .from('tags')
+      .select('tag_name')
+      .eq('user_id', session.user.id);
+    const uniqueTags = [...new Set(tagsData?.map((tag) => tag.tag_name))] || [];
+    setAvailableTags(uniqueTags);
+  };
+
   const filteredNotes = searchTag
     ? notes.filter((note) =>
         note.tags?.some((tag) => tag.tag_name.toLowerCase().includes(searchTag.toLowerCase()))
@@ -132,8 +247,11 @@ export default function Dashboard() {
       <h1 className="text-3xl font-bold mb-6">ContextWise Dashboard</h1>
       <p className="text-lg mb-4">Welcome, {userEmail || 'User'}!</p>
 
-      {/* Note Creation Form */}
-      <form onSubmit={handleCreateNote} className="w-full max-w-md mb-8">
+      {/* Note Creation/Edit Form */}
+      <form
+        onSubmit={editingNote ? handleEditNote : handleCreateNote}
+        className="w-full max-w-md mb-8"
+      >
         <div className="mb-4">
           <label htmlFor="title" className="block text-sm font-medium">
             Title
@@ -166,8 +284,21 @@ export default function Dashboard() {
           type="submit"
           className="w-full bg-blue-500 text-white p-2 rounded-md hover:bg-blue-600"
         >
-          Create Note
+          {editingNote ? 'Update Note' : 'Create Note'}
         </button>
+        {editingNote && (
+          <button
+            type="button"
+            onClick={() => {
+              setEditingNote(null);
+              setTitle('');
+              setContent('');
+            }}
+            className="w-full mt-2 bg-gray-500 text-white p-2 rounded-md hover:bg-gray-600"
+          >
+            Cancel Edit
+          </button>
+        )}
       </form>
 
       {/* Tag Search and Filter */}
@@ -204,7 +335,27 @@ export default function Dashboard() {
           <ul className="space-y-4">
             {filteredNotes.map((note) => (
               <li key={note.id} className="p-4 bg-gray-100 rounded-md">
-                <h3 className="text-lg font-semibold">{note.title}</h3>
+                <div className="flex justify-between items-center">
+                  <h3 className="text-lg font-semibold">{note.title}</h3>
+                  <div className="space-x-2">
+                    <button
+                      onClick={() => {
+                        setEditingNote(note);
+                        setTitle(note.title);
+                        setContent(note.content);
+                      }}
+                      className="text-blue-500 hover:underline"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => handleDeleteNote(note.id)}
+                      className="text-red-500 hover:underline"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
                 <p className="text-gray-700">{note.content}</p>
                 {note.summary && (
                   <p className="text-sm text-gray-600 mt-2">
