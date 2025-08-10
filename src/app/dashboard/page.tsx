@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { summarizeText } from '@/lib/huggingface';
+import { summarizeText, extractEntities } from '@/lib/huggingface';
 import { Note } from '@/types/note';
 
 export default function Dashboard() {
@@ -14,14 +14,13 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
-  // Check auth and fetch notes
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (session) {
         setUserEmail(session.user.email || 'No email');
         const { data, error } = await supabase
           .from('notes')
-          .select('*')
+          .select('*, tags(tag_name)')
           .eq('user_id', session.user.id)
           .order('created_at', { ascending: false });
         if (error) {
@@ -36,7 +35,6 @@ export default function Dashboard() {
     });
   }, [router]);
 
-  // Handle note creation with summary
   const handleCreateNote = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -47,25 +45,44 @@ export default function Dashboard() {
       return;
     }
 
-    // Generate summary
     const summary = await summarizeText(content);
+    if (summary.startsWith('Failed') || summary.startsWith('Hugging Face')) {
+      setError(summary);
+      return;
+    }
 
-    const { error } = await supabase
+    const entities = await extractEntities(content);
+    const { data, error } = await supabase
       .from('notes')
-      .insert([{ user_id: session.user.id, title, content, summary }]);
+      .insert([{ user_id: session.user.id, title, content, summary }])
+      .select()
+      .single();
     if (error) {
       console.error('Error creating note:', error);
       setError(error.message);
-    } else {
-      const { data } = await supabase
-        .from('notes')
-        .select('*')
-        .eq('user_id', session.user.id)
-        .order('created_at', { ascending: false });
-      setNotes(data || []);
-      setTitle('');
-      setContent('');
+      return;
     }
+
+    if (entities.length > 0 && data) {
+      await supabase
+        .from('tags')
+        .insert(
+          entities.map((tag_name) => ({
+            note_id: data.id,
+            user_id: session.user.id,
+            tag_name,
+          }))
+        );
+    }
+
+    const { data: refreshedNotes } = await supabase
+      .from('notes')
+      .select('*, tags(tag_name)')
+      .eq('user_id', session.user.id)
+      .order('created_at', { ascending: false });
+    setNotes(refreshedNotes || []);
+    setTitle('');
+    setContent('');
   };
 
   return (
@@ -73,7 +90,6 @@ export default function Dashboard() {
       <h1 className="text-3xl font-bold mb-6">ContextWise Dashboard</h1>
       <p className="text-lg mb-4">Welcome, {userEmail || 'User'}!</p>
 
-      {/* Note Creation Form */}
       <form onSubmit={handleCreateNote} className="w-full max-w-md mb-8">
         <div className="mb-4">
           <label htmlFor="title" className="block text-sm font-medium">
@@ -110,7 +126,6 @@ export default function Dashboard() {
         </button>
       </form>
 
-      {/* Notes List */}
       <div className="w-full max-w-2xl">
         <h2 className="text-2xl font-bold mb-4">Your Notes</h2>
         {notes.length === 0 ? (
@@ -124,6 +139,11 @@ export default function Dashboard() {
                 {note.summary && (
                   <p className="text-sm text-gray-600 mt-2">
                     <strong>Summary:</strong> {note.summary}
+                  </p>
+                )}
+                {note.tags && note.tags.length > 0 && (
+                  <p className="text-sm text-gray-600 mt-2">
+                    <strong>Tags:</strong> {note.tags.map((tag) => tag.tag_name).join(', ')}
                   </p>
                 )}
                 <p className="text-sm text-gray-500">
