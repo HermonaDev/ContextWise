@@ -248,6 +248,7 @@ export default function Dashboard() {
       <p className="text-lg mb-4">Welcome, {userEmail || 'User'}!</p>
 
       {/* Note Creation/Edit Form */}
+      <div className=" p-6 rounded-lg shadow-md w-full max-w-md mb-8">
       <form
         onSubmit={editingNote ? handleEditNote : handleCreateNote}
         className="w-full max-w-md mb-8"
@@ -300,7 +301,7 @@ export default function Dashboard() {
           </button>
         )}
       </form>
-
+</div>
       {/* Tag Search and Filter */}
       <div className="w-full max-w-md mb-8">
         <h2 className="text-xl font-semibold mb-2">Filter by Tag</h2>
@@ -334,9 +335,9 @@ export default function Dashboard() {
         ) : (
           <ul className="space-y-4">
             {filteredNotes.map((note) => (
-              <li key={note.id} className="p-4 bg-gray-100 rounded-md">
+              <li key={note.id} className="p-4 bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow">
                 <div className="flex justify-between items-center">
-                  <h3 className="text-lg font-semibold">{note.title}</h3>
+                  <h3 className="text-lg font-semibold text-gray-800">{note.title}</h3>
                   <div className="space-x-2">
                     <button
                       onClick={() => {
