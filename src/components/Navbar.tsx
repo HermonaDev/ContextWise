@@ -32,6 +32,9 @@ export default function Navbar() {
               <Link href="/dashboard" className="hover:underline">
                 Dashboard
               </Link>
+              <Link href="/notes" className="hover:underline">
+                All Notes
+              </Link>
               <Link href="/profile" className="hover:underline">
                 Profile
               </Link>
